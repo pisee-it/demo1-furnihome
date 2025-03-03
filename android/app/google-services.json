@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "934304345161",
+    "project_id": "quanlydodacapp",
+    "storage_bucket": "quanlydodacapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934304345161:android:c56c0b7b7c6f574a3be398",
+        "android_client_info": {
+          "package_name": "com.example.qldd_demo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "934304345161-kgb5vufkuaoi79tme4b52u32bvmdi3lj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.qldd_demo",
+            "certificate_hash": "0f56c7967c60f6305b6b0307c127c534354f8622"
+          }
+        },
+        {
+          "client_id": "934304345161-rrn330dcjsujums8vba8b2ng521lu1re.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyACL5le4GjxFdOaZN7JNSW_-4YYLBMlAUk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "934304345161-rrn330dcjsujums8vba8b2ng521lu1re.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "934304345161-ge3qtne429mum76ji4pe01pbc5rcjmi1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.qlddDemo"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
