@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/models/user_model.dart';
+import '../../core/services/account_history_service.dart';
 import '../../viewmodels/home_viewmodel.dart';
 import 'package:google_fonts/google_fonts.dart';
-
+import 'package:lottie/lottie.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -13,7 +15,36 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<HomeViewModel>(context, listen: false).fetchUserData();
+    Future.microtask(() async {
+      showLoadingDialog();
+      final homeViewModel = Provider.of<HomeViewModel>(context, listen: false);
+      await homeViewModel.fetchUserData();
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context); // Đóng loading an toàn
+      }
+      _checkProfileCompletion(homeViewModel.user);
+    });
+  }
+
+  void showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const SplashLoadingDialog(),
+    );
+  }
+
+  void _checkProfileCompletion(UserModel? user) {
+    if (user != null && user.isProfileComplete == false) {
+      Navigator.pushReplacementNamed(context, '/user-info');
+    }
+  }
+
+  String _formatPhoneNumber(String phoneNumber) {
+    if (phoneNumber.length >= 9) {
+      return phoneNumber.replaceRange(3, phoneNumber.length - 3, "*" * (phoneNumber.length - 6));
+    }
+    return phoneNumber;
   }
 
   @override
@@ -30,7 +61,6 @@ class _HomeScreenState extends State<HomeScreen> {
           style: GoogleFonts.audiowide(
             color: Colors.white,
             fontSize: 22,
-            fontWeight: FontWeight.normal,
           ),
         ),
         actions: [
@@ -42,7 +72,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Stack(
         children: [
-          // Background
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -52,42 +81,18 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
-          // Nội dung
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
                 padding: const EdgeInsets.all(20.0),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundImage: user?.photoUrl != null
-                          ? NetworkImage(user!.photoUrl!)
-                          : AssetImage("assets/avatar_placeholder.png") as ImageProvider,
-                    ),
-                    SizedBox(width: 15),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Xin chào, ${user?.displayName ?? "Người dùng"}!",
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                        Text(
-                          user?.email ?? "",
-                          style: TextStyle(fontSize: 14, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.pushNamed(context, '/personal-settings');
+                  },
+                  child: _buildUserInfo(user),
                 ),
               ),
-
-              SizedBox(height: 20),
-
-              // Danh sách đồ đạc
               Expanded(
                 child: ListView.builder(
                   padding: EdgeInsets.symmetric(horizontal: 20),
@@ -108,8 +113,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-
-          // Nút thêm đồ
           Positioned(
             bottom: 20,
             right: 20,
@@ -126,8 +129,91 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildUserInfo(UserModel? user) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xFF1B4965).withOpacity(0.99),
+            blurRadius: 10,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            Navigator.pushNamed(context, '/personal-settings');
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundImage: (user?.photoUrl?.isNotEmpty ?? false)
+                      ? NetworkImage(user!.photoUrl!)
+                      : (user?.emailAvatarUrl?.isNotEmpty ?? false)
+                      ? NetworkImage(user!.emailAvatarUrl!)
+                      : AssetImage("assets/avatar_placeholder.png") as ImageProvider,
+                ),
+                SizedBox(width: 15),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Xin chào, ${user?.displayName ?? "Người dùng"}!",
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      (user?.isHomeOwner == true) ? "Chủ nhà" : "Người ở",
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    Text(
+                      _formatPhoneNumber(user?.phoneNumber ?? ""),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    if ((user?.email?.isNotEmpty ?? false))
+                      Text(
+                        user!.email!,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white70,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ✅ Hiển thị chọn tài khoản hoặc đăng xuất
-  void _showAccountSwitcher(BuildContext context, HomeViewModel homeViewModel) {
+  void _showAccountSwitcher(BuildContext context, HomeViewModel homeViewModel) async {
+    final accounts = await AccountHistoryService.loadAccounts();
+    print("📝 Danh sách tài khoản đã lưu: ${accounts.length}");
+    final pages = List.generate(
+      (accounts.length / 3).ceil(),
+          (index) => accounts.skip(index * 3).take(3).toList(),
+    );
+
     showModalBottomSheet(
       context: context,
       shape: RoundedRectangleBorder(
@@ -168,46 +254,81 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             SizedBox(height: 20),
 
-            // ⭐ Container thông tin tài khoản
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.8),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 66,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ListTile(
-                leading: CircleAvatar(
-                  radius: 28,
-                  backgroundImage: homeViewModel.user?.photoUrl != null
-                      ? NetworkImage(homeViewModel.user!.photoUrl!)
-                      : AssetImage("assets/avatar_placeholder.png") as ImageProvider,
-                ),
-                title: Text(
-                  homeViewModel.user?.displayName ?? "Người dùng",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                subtitle: Text(
-                  homeViewModel.user?.email ?? "",
-                  style: TextStyle(
-                    color: Colors.white70,
-                  ),
-                ),
+            // ✅ Danh sách tài khoản (phân trang nếu > 3)
+            SizedBox(
+              height: 230,
+              child: PageView.builder(
+                itemCount: pages.length,
+                itemBuilder: (context, pageIndex) {
+                  final pageAccounts = pages[pageIndex];
+                  return SingleChildScrollView(
+                    child: Column(
+                      children: pageAccounts.map<Widget>((UserModel account) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.8),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black26,
+                                blurRadius: 66,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              radius: 28,
+                              backgroundImage: (account.photoUrl != null && account.photoUrl!.isNotEmpty)
+                                  ? NetworkImage(account.photoUrl!)
+                                  : (account.emailAvatarUrl != null && account.emailAvatarUrl!.isNotEmpty)
+                                  ? NetworkImage(account.emailAvatarUrl!)
+                                  : const AssetImage("assets/avatar_placeholder.png") as ImageProvider,
+                            ),
+                            title: Text(
+                              account.displayName ?? "Người dùng",
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  (account.isHomeOwner == true) ? "Chủ nhà" : "Người ở",
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  (account.email ?? "").isNotEmpty
+                                      ? account.email!
+                                      : _formatPhoneNumber(account.phoneNumber ?? ""),
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                },
               ),
             ),
+
             SizedBox(height: 20),
 
             // ⭐ Container nút đăng xuất
@@ -305,7 +426,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
                 if (confirm == true) {
                   await homeViewModel.logout();
-                  Navigator.pop(context); // Đóng BottomSheet
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context); // Đóng loading an toàn
+                  }
                   Navigator.pushNamedAndRemoveUntil(
                     context,
                     "/login",
@@ -345,6 +468,52 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SplashLoadingDialog extends StatelessWidget {
+  const SplashLoadingDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1B4965),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Lottie.asset(
+              'assets/animations/LoadingAnimation.json',
+              width: 100,
+              height: 100,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "FurniHome",
+              style: TextStyle(
+                fontFamily: "Audiowide",
+                fontSize: 28,
+                color: Colors.white,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Đang tải dữ liệu...",
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.8),
+              ),
+            ),
           ],
         ),
       ),

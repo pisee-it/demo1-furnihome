@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../core/models/user_model.dart';
 import '../core/services/auth_service.dart';
@@ -6,17 +7,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 class AuthViewModel extends ChangeNotifier {
   final AuthService _authService = AuthService();
   UserModel? _user;
-  bool _isLoading = false;
   String? _errorMessage;
 
   UserModel? get user => _user;
-  bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-
-  void setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
-  }
 
   void setError(String? message) {
     _errorMessage = message;
@@ -24,26 +18,21 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // ✅ Gửi OTP
-  Future<bool> sendOTP(String phoneNumber) async {
-    setLoading(true);
+  Future<String?> sendOTP(String phoneNumber) async {
     try {
-      await _authService.sendOTP(phoneNumber);
+      final verificationId = await _authService.sendOTP(phoneNumber);
       setError(null);
-      setLoading(false);
-      return true;
+      return verificationId;
     } catch (e) {
       setError("Lỗi gửi OTP: ${e.toString()}");
-      setLoading(false);
-      return false;
+      return null;
     }
   }
 
   // ✅ Xác thực OTP
   Future<bool> verifyOTP(String otpCode) async {
-    setLoading(true);
     try {
       bool success = await _authService.verifyOTP(otpCode);
-      setLoading(false);
       if (!success) {
         setError("OTP không hợp lệ");
         return false;
@@ -52,67 +41,12 @@ class AuthViewModel extends ChangeNotifier {
       return true;
     } catch (e) {
       setError("Lỗi xác thực OTP: ${e.toString()}");
-      setLoading(false);
-      return false;
-    }
-  }
-
-  // ✅ Đăng nhập bằng số điện thoại
-  Future<bool> loginWithPhone(
-      String phoneNumber, String password, BuildContext context) async {
-    setLoading(true);
-    try {
-      _user = await _authService.loginWithPhone(phoneNumber, password);
-      if (_user != null) {
-        setError(null);
-        setLoading(false);
-
-        if (_user!.isNewUser) {
-          Navigator.pushReplacementNamed(context, "/user-info");
-        } else {
-          Navigator.pushReplacementNamed(context, "/home");
-        }
-        return true;
-      } else {
-        setError("Sai số điện thoại hoặc mật khẩu");
-        setLoading(false);
-        return false;
-      }
-    } catch (e) {
-      setError("Lỗi đăng nhập: ${e.toString()}");
-      setLoading(false);
-      return false;
-    }
-  }
-
-  // ✅ Đăng ký bằng số điện thoại
-  Future<bool> registerWithPhone(
-      String phoneNumber, String password, BuildContext context) async {
-    setLoading(true);
-    try {
-      UserModel? newUser =
-      await _authService.registerWithPhone(phoneNumber, password);
-      if (newUser != null) {
-        setError(null);
-        setLoading(false);
-
-        Navigator.pushReplacementNamed(context, "/user-info");
-        return true;
-      } else {
-        setError("Đăng ký không thành công");
-        setLoading(false);
-        return false;
-      }
-    } catch (e) {
-      setError("Lỗi đăng ký: ${e.toString()}");
-      setLoading(false);
       return false;
     }
   }
 
   // ✅ Lưu thông tin cá nhân vào Firestore
   Future<void> saveUserInfo(UserModel userModel) async {
-    setLoading(true);
     try {
       await _authService.saveUserInfo(userModel);
       _user = userModel;
@@ -120,7 +54,38 @@ class AuthViewModel extends ChangeNotifier {
     } catch (e) {
       setError("Lỗi lưu thông tin: ${e.toString()}");
     }
-    setLoading(false);
+  }
+
+  Future<void> fetchUserInfo() async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser != null) {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(firebaseUser.uid).get();
+      if (doc.exists) {
+        _user = UserModel.fromMap(doc.data()!);
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> fetchUserInfoByPhone(String phoneNumber) async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('phoneNumber', isEqualTo: phoneNumber)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final userData = querySnapshot.docs.first.data();
+        _user = UserModel.fromMap(userData);
+        notifyListeners();
+      } else {
+        _user = null;
+        setError("Không tìm thấy người dùng.");
+      }
+    } catch (e) {
+      setError("Lỗi khi lấy thông tin người dùng: $e");
+    }
   }
 
   // ✅ Kiểm tra nếu người dùng đã đăng nhập
@@ -137,25 +102,28 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  // ✅ Đăng nhập Google
+  // ✅ Đăng nhập Google và điều hướng về Home
   Future<void> loginWithGoogle(BuildContext context) async {
-    setLoading(true);
     try {
       _user = await _authService.signInWithGoogle();
       setError(null);
 
       if (_user != null) {
-        Navigator.pushReplacementNamed(context, "/home");
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          "/home",
+              (route) => false,
+        );
+      } else {
+        setError("Đăng nhập Google thất bại.");
       }
     } catch (e) {
       setError("Lỗi đăng nhập Google: ${e.toString()}");
     }
-    setLoading(false);
   }
 
   // ✅ Đăng xuất toàn bộ
   Future<void> logout(BuildContext context) async {
-    setLoading(true);
     try {
       await _authService.signOut();
       _user = null;
@@ -178,6 +146,5 @@ class AuthViewModel extends ChangeNotifier {
         ),
       );
     }
-    setLoading(false);
   }
 }

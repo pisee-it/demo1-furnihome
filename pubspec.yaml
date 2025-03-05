@@ -40,7 +40,9 @@ dependencies:
   cloud_firestore: ^5.6.5
   lottie: ^3.3.1
   google_fonts: ^6.2.1
-
+  image_picker: ^1.1.2
+  firebase_storage: ^12.4.4
+  shared_preferences: ^2.2.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -73,8 +75,9 @@ flutter:
   assets:
     - assets/google_icon.png
     - assets/logo/logo.png
+    - assets/avatar_placeholder.png
     - assets/logo/logo - removed.png
-    - assets/animations/home_family.json
+    - assets/animations/LoadingAnimation.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -87,17 +90,10 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
+  fonts:
+      - family: Audiowide
+        fonts:
+          - asset: assets/fonts/Audiowide-Regular.ttf
+
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package

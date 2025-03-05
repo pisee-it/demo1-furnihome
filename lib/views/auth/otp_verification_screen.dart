@@ -1,17 +1,29 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:lottie/lottie.dart';
 import '../../viewmodels/otp_viewmodel.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String phoneNumber;
   final String verificationId;
-  final String password;
+  final String? displayName;
+  final String? age;
+  final String? gender;
+  final bool? isHomeOwner;
+  final File? avatarImageFile;
+  final Function(String otpCode)? onOtpVerified;
 
   OtpVerificationScreen({
     required this.phoneNumber,
     required this.verificationId,
-    required this.password,
+    this.displayName,
+    this.age,
+    this.gender,
+    this.isHomeOwner,
+    this.avatarImageFile,
+    this.onOtpVerified,
   });
 
   @override
@@ -25,6 +37,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   void dispose() {
     otpController.dispose();
     super.dispose();
+  }
+
+  void showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const SplashLoadingDialog(),
+    );
   }
 
   @override
@@ -116,17 +136,31 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                           ),
                         ),
                       const SizedBox(height: 15),
-                      otpViewModel.isLoading
-                          ? const CircularProgressIndicator()
-                          : ElevatedButton(
+                      ElevatedButton(
                         onPressed: () async {
                           FocusScope.of(context).unfocus();
+                          final otpCode = otpController.text.trim();
+
+                          showLoadingDialog();
+
                           final isValid = await otpViewModel.verifyOtp(
-                            otpController.text.trim(),
+                            otpCode,
                             context,
+                            widget.phoneNumber,
+                            widget.displayName,
+                            widget.age,
+                            widget.gender,
+                            widget.isHomeOwner,
+                            widget.avatarImageFile,
                           );
+
+                          if (Navigator.canPop(context)) {
+                            Navigator.pop(context); // Đóng loading an toàn
+                          }
+
                           if (isValid) {
-                            Navigator.pushReplacementNamed(context, "/user-info");
+                            await widget.onOtpVerified?.call(otpCode);
+                            Navigator.pushReplacementNamed(context, "/home");
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -151,7 +185,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
-                      decoration: TextDecoration.underline,
                     ),
                   ),
                 )
@@ -165,6 +198,52 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class SplashLoadingDialog extends StatelessWidget {
+  const SplashLoadingDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1B4965),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Lottie.asset(
+              'assets/animations/LoadingAnimation.json',
+              width: 100,
+              height: 100,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "FurniHome",
+              style: TextStyle(
+                fontFamily: "Audiowide",
+                fontSize: 28,
+                color: Colors.white,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Đang xử lý...",
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.8),
+              ),
+            ),
+          ],
         ),
       ),
     );

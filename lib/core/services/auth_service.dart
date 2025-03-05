@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
+import 'account_history_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -11,72 +12,43 @@ class AuthService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _verificationId;
 
-  // ✅ Tạo email giả lập từ số điện thoại
-  String _generateFakeEmail(String phoneNumber) {
-    return "$phoneNumber@furnihome.vn";
-  }
-
-  // ✅ Đăng ký bằng SĐT & mật khẩu (thay cho registerWithEmail)
-  Future<UserModel?> registerWithPhone(String phoneNumber, String password) async {
-    try {
-      String fakeEmail = _generateFakeEmail(phoneNumber);
-
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: fakeEmail,
-        password: password,
-      );
-
-      User? user = result.user;
-
-      if (user != null) {
-        DocumentSnapshot userDoc = await _firestore.collection("users").doc(user.uid).get();
-
-        if (!userDoc.exists) {
-          return UserModel(
-            uid: user.uid,
-            email: fakeEmail,
-            phoneNumber: phoneNumber,
-            isNewUser: true,
-          );
-        }
-
-        return UserModel(
-          uid: user.uid,
-          email: fakeEmail,
-          phoneNumber: phoneNumber,
-          displayName: userDoc["displayName"] ?? "Người dùng",
-          photoUrl: userDoc["photoUrl"] ?? "",
-        );
-      }
-      return null;
-    } catch (e) {
-      throw Exception("🔥 Lỗi đăng ký SĐT: $e");
+  String normalizePhoneNumber84(String phone) {
+    phone = phone.replaceAll(RegExp(r'\s+'), ''); // Xóa khoảng trắng
+    if (phone.startsWith('0')) {
+      return '+84${phone.substring(1)}';
     }
+    return phone; // Nếu đã là +84 thì giữ nguyên
   }
 
-  // Gửi OTP
-  Future<void> sendOTP(String phoneNumber) async {
-    try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        timeout: Duration(seconds: 60),
-        verificationCompleted: (PhoneAuthCredential credential) {},
-        verificationFailed: (FirebaseAuthException e) {
-          throw Exception("🔥 Lỗi gửi OTP: ${e.message}");
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          _verificationId = verificationId;
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          _verificationId = verificationId;
-        },
-      );
-    } catch (e) {
-      throw Exception("🔥 Lỗi gửi OTP: $e");
+  // ✅ Gửi OTP
+  Future<String?> sendOTP(String phoneNumber) async {
+    String? verificationId;
+    await _auth.verifyPhoneNumber(
+      phoneNumber: phoneNumber,
+      timeout: const Duration(seconds: 60),
+      verificationCompleted: (PhoneAuthCredential credential) async {
+        await _auth.signInWithCredential(credential);
+      },
+      verificationFailed: (FirebaseAuthException e) {
+        throw Exception("🔥 Lỗi gửi OTP: ${e.message}");
+      },
+      codeSent: (String vId, int? resendToken) {
+        verificationId = vId;
+      },
+      codeAutoRetrievalTimeout: (String vId) {
+        verificationId = vId;
+      },
+    );
+
+    // Đợi verificationId được set xong
+    while (verificationId == null) {
+      await Future.delayed(const Duration(milliseconds: 100));
     }
+
+    return verificationId;
   }
 
-  // Xác thực OTP
+  // ✅ Xác thực OTP
   Future<bool> verifyOTP(String otpCode) async {
     try {
       if (_verificationId == null) throw Exception("Không tìm thấy mã xác minh");
@@ -87,108 +59,86 @@ class AuthService {
       );
 
       await _auth.signInWithCredential(credential);
-
       return true;
     } catch (e) {
       throw Exception("🔥 Lỗi xác thực OTP: $e");
     }
   }
 
-  // ✅ Lưu thông tin cá nhân vào Firestore
+  // ✅ Lưu thông tin người dùng vào Firestore
   Future<void> saveUserInfo(UserModel userModel) async {
-    int retryCount = 3;
-    while (retryCount > 0) {
-      try {
-        await _firestore.collection("users").doc(userModel.uid).set(
-          userModel.toMap(),
-          SetOptions(merge: true),
-        );
-        return;
-      } catch (e) {
-        if (e.toString().contains("unavailable")) {
-          retryCount--;
-          await Future.delayed(Duration(seconds: 2));
-        } else {
-          throw Exception("🔥 Lỗi lưu thông tin: $e");
-        }
-      }
-    }
-  }
-
-  // ✅ Đăng nhập bằng SĐT & mật khẩu (thay cho loginWithEmail)
-  Future<UserModel?> loginWithPhone(String phoneNumber, String password) async {
     try {
-      String fakeEmail = _generateFakeEmail(phoneNumber);
-
-      UserCredential result = await _auth.signInWithEmailAndPassword(
-        email: fakeEmail,
-        password: password,
+      await _firestore.collection("users").doc(userModel.uid).set(
+        userModel.toMap(),
+        SetOptions(merge: true),
       );
-
-      User? user = result.user;
-
-      if (user != null) {
-        DocumentSnapshot userDoc = await _firestore.collection("users").doc(user.uid).get();
-
-        if (userDoc.exists) {
-          return UserModel(
-            uid: user.uid,
-            email: fakeEmail,
-            phoneNumber: phoneNumber,
-            displayName: userDoc["displayName"] ?? "Người dùng",
-            photoUrl: userDoc["photoUrl"] ?? "",
-          );
-        }
-      }
-      return null;
     } catch (e) {
-      throw Exception("🔥 Lỗi đăng nhập SĐT: $e");
+      throw Exception("🔥 Lỗi lưu thông tin: $e");
     }
   }
 
   // ✅ Đăng nhập bằng Google
   Future<UserModel?> signInWithGoogle() async {
     try {
-      if (await _googleSignIn.isSignedIn()) {
-        await _googleSignIn.signOut(); // ✅ Xoá phiên cũ nếu có
-      }
+      await _googleSignIn.signOut();
 
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
-      if (googleUser == null) {
-        return null; // Người dùng huỷ đăng nhập
-      }
+      if (googleUser == null) return null;
 
-      final GoogleSignInAuthentication googleAuth =
-      await googleUser.authentication;
-      final AuthCredential credential = GoogleAuthProvider.credential(
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      UserCredential result =
-      await _auth.signInWithCredential(credential);
+      UserCredential result = await _auth.signInWithCredential(credential);
       User? user = result.user;
 
       if (user != null) {
-        DocumentSnapshot userDoc =
-        await _firestore.collection("users").doc(user.uid).get();
+        final docRef = _firestore.collection('users').doc(user.uid);
+        final userDoc = await docRef.get();
 
-        if (!userDoc.exists) {
-          await saveUserInfo(UserModel(
-            uid: user.uid,
-            email: user.email!,
-            displayName: user.displayName ?? "Người dùng",
-            photoUrl: user.photoURL ?? "",
-          ));
+        if (userDoc.exists) {
+          // ✅ Nếu đã có tài khoản -> chỉ cập nhật emailAvatarUrl nếu cần
+          await docRef.update({
+            'emailAvatarUrl': user.photoURL ?? "",
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          // ✅ Nếu tài khoản mới -> tạo đầy đủ thông tin cơ bản
+          await docRef.set({
+            'uid': user.uid,
+            'email': user.email ?? '',
+            'displayName': "Người dùng", // Không lấy từ Gmail để đồng nhất
+            'emailAvatarUrl': user.photoURL ?? "",
+            'photoUrl': "", // Chưa có avatar tự chọn
+            'phoneNumber': "", // Chưa có, sẽ cập nhật sau
+            'age': 0, // Mặc định
+            'gender': "Không xác định",
+            'role': "Không xác định",
+            'isHomeOwner': false,
+            'isNewUser': true,
+            'isProfileComplete': false, // Chờ bổ sung thông tin
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         }
-
-        return UserModel(
+        final userModel = UserModel(
           uid: user.uid,
-          email: user.email!,
-          displayName: user.displayName ?? "Người dùng",
-          photoUrl: user.photoURL ?? "",
+          email: user.email ?? '',
+          displayName: "Người dùng",
+          emailAvatarUrl: user.photoURL ?? "",
+          photoUrl: "", // Tạm thời
+          phoneNumber: "",
+          age: 0,
+          gender: "Không xác định",
+          role: "Không xác định",
+          isHomeOwner: false,
+          isNewUser: true,
         );
+
+        await AccountHistoryService.saveAccount(userModel);
+        return userModel;
       }
       return null;
     } catch (e) {
@@ -200,33 +150,30 @@ class AuthService {
   Future<void> signOut() async {
     try {
       await _auth.signOut();
-
-      if (await _googleSignIn.isSignedIn()) {
-        await _googleSignIn.signOut(); // ✅ Chỉ signOut nếu có phiên Google
-      }
-
+      await _googleSignIn.signOut();
     } catch (e) {
       throw Exception("🔥 Lỗi đăng xuất: $e");
     }
   }
 
   // ✅ Lấy thông tin người dùng hiện tại
-  UserModel? getCurrentUser() {
+  Future<UserModel?> getCurrentUser() async {
     final user = _auth.currentUser;
     if (user != null) {
-      return UserModel(
-        uid: user.uid,
-        email: user.email!,
-        displayName: user.displayName ?? "Người dùng",
-        photoUrl: user.photoURL ?? "",
-      );
+      final doc = await _firestore.collection("users").doc(user.uid).get();
+      if (doc.exists) {
+        final userModel = UserModel.fromMap(doc.data()!);
+
+        // ✅ Lưu tài khoản vào lịch sử
+        await AccountHistoryService.saveAccount(userModel);
+        return userModel;
+      }
     }
     return null;
   }
 
   // ✅ Cập nhật thông tin người dùng
-  Future<void> updateUserInfo(
-      String uid, Map<String, dynamic> updatedData) async {
+  Future<void> updateUserInfo(String uid, Map<String, dynamic> updatedData) async {
     try {
       await _firestore.collection("users").doc(uid).update(updatedData);
     } catch (e) {

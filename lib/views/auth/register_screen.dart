@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../viewmodels/auth_viewmodel.dart';
-import '../../widgets/password_textfield.dart';
 import 'login_screen.dart';
-import 'otp_verification_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:lottie/lottie.dart';
 
 class RegisterScreen extends StatefulWidget {
   @override
@@ -15,93 +14,95 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final phoneController = TextEditingController();
-  final passwordController = TextEditingController();
-  final confirmPasswordController = TextEditingController();
-
   String? _errorMessage;
 
-  bool isValidPhoneNumber(String phone) {
-    final regex = RegExp(r'^(0|\+84)[3|5|7|8|9][0-9]{8}$');
-    return regex.hasMatch(phone);
-  }
-
-  String formatPhoneNumber(String phone) {
-    if (phone.startsWith('0')) {
-      return '+84${phone.substring(1)}';
+  String normalizePhoneNumber(String phone) {
+    phone = phone.replaceAll(RegExp(r'\s+'), '');
+    if (phone.startsWith('+84')) {
+      phone = '0${phone.substring(3)}';
     }
     return phone;
   }
 
-  Future<void> _sendOTP(String phoneNumber) async {
-    final authViewModel = Provider.of<AuthViewModel>(context, listen: false);
-    authViewModel.setLoading(true);
-
-    try {
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        timeout: const Duration(seconds: 60),
-        verificationCompleted: (_) {},
-        verificationFailed: (e) {
-          setState(() {
-            _errorMessage = "Không thể gửi OTP. Vui lòng kiểm tra số điện thoại hoặc thử lại sau.";
-          });
-        },
-        codeSent: (verificationId, _) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => OtpVerificationScreen(
-                phoneNumber: phoneNumber,
-                verificationId: verificationId,
-                password: passwordController.text,
-              ),
-            ),
-          );
-        },
-        codeAutoRetrievalTimeout: (_) {},
-      );
-    } catch (_) {
-      setState(() {
-        _errorMessage = "Đã xảy ra lỗi khi gửi OTP. Vui lòng thử lại.";
-      });
-    } finally {
-      authViewModel.setLoading(false);
-    }
+  bool isValidPhoneNumber(String phone) {
+    final regex = RegExp(r'^(0|\+84)([35789])[0-9]{8}$');
+    return regex.hasMatch(phone);
   }
 
-  void _validateAndSendOTP() async {
+  Future<bool> checkPhoneNumberExists(String phoneNumber) async {
+    final querySnapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .where('phoneNumber', isEqualTo: phoneNumber)
+        .get();
+
+    return querySnapshot.docs.isNotEmpty;
+  }
+
+  void showLoadingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const SplashLoadingDialog(),
+    );
+  }
+
+  Future<void> _validateAndProceed() async {
     setState(() => _errorMessage = null);
 
-    if (_formKey.currentState!.validate()) {
-      final phone = phoneController.text.trim();
-      final password = passwordController.text.trim();
-      final confirmPassword = confirmPasswordController.text.trim();
+    final rawPhone = phoneController.text.trim();
 
-      if (password.length < 6) {
-        setState(() => _errorMessage = "Mật khẩu phải có ít nhất 6 ký tự.");
-        return;
-      }
-      if (password != confirmPassword) {
-        setState(() => _errorMessage = "Mật khẩu xác nhận không khớp.");
-        return;
-      }
-
-      await _sendOTP(formatPhoneNumber(phone));
+    if (rawPhone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Chúng tôi cần biết SĐT của bạn", textAlign: TextAlign.center),
+          backgroundColor: Color(0xFFCA3E47),
+        ),
+      );
+      return;
     }
+
+    if (!isValidPhoneNumber(rawPhone)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Số điện thoại không hợp lệ", textAlign: TextAlign.center),
+          backgroundColor: Color(0xFFCA3E47),
+        ),
+      );
+      return;
+    }
+
+    showLoadingDialog();
+
+    final exists = await checkPhoneNumberExists(rawPhone);
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context); // Đóng loading an toàn
+    }
+
+    if (exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Số điện thoại đã tồn tại. Vui lòng dùng số khác.", textAlign: TextAlign.center),
+          backgroundColor: Color(0xFFCA3E47),
+        ),
+      );
+      return;
+    }
+
+    Navigator.pushNamed(
+      context,
+      '/user-info',
+      arguments: rawPhone,
+    );
   }
 
   @override
   void dispose() {
     phoneController.dispose();
-    passwordController.dispose();
-    confirmPasswordController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final authViewModel = Provider.of<AuthViewModel>(context);
-
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: SingleChildScrollView(
@@ -162,47 +163,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             controller: phoneController,
                             keyboardType: TextInputType.phone,
                             decoration: InputDecoration(
-                              labelText: "Số điện thoại",
+                              labelText: "Nhập số điện thoại để bắt đầu",
                               prefixIcon: const Icon(Icons.phone, color: Color(0xFF1B4965)),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return "Vui lòng nhập số điện thoại";
-                              }
-                              if (!isValidPhoneNumber(value.trim())) {
-                                return "Số điện thoại không hợp lệ";
-                              }
-                              return null;
-                            },
-                            onChanged: (_) {
-                              if (_errorMessage != null) {
-                                setState(() => _errorMessage = null);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 15),
-                          PasswordTextField(
-                            controller: passwordController,
-                            labelText: "Mật khẩu",
-                            borderColor: const Color(0xFF1B4965),
-                            iconColor: const Color(0xFF1B4965),
-                            labelColor: Colors.black54,
-                            onChanged: (_) {
-                              if (_errorMessage != null) {
-                                setState(() => _errorMessage = null);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 15),
-                          PasswordTextField(
-                            controller: confirmPasswordController,
-                            labelText: "Xác nhận mật khẩu",
-                            borderColor: const Color(0xFF1B4965),
-                            iconColor: const Color(0xFF1B4965),
-                            labelColor: Colors.black54,
                             onChanged: (_) {
                               if (_errorMessage != null) {
                                 setState(() => _errorMessage = null);
@@ -210,27 +176,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             },
                           ),
                           const SizedBox(height: 20),
-
                           if (_errorMessage != null)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: Text(
                                 _errorMessage!,
-                                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
-
-                          authViewModel.isLoading
-                              ? const CircularProgressIndicator()
-                              : ElevatedButton(
-                            onPressed: _validateAndSendOTP,
+                          ElevatedButton(
+                            onPressed: _validateAndProceed,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1B4965),
                               minimumSize: const Size(double.infinity, 50),
                             ),
                             child: const Text(
-                              "Gửi OTP",
+                              "Tiếp tục",
                               style: TextStyle(fontSize: 18, color: Colors.white),
                             ),
                           ),
@@ -257,6 +222,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class SplashLoadingDialog extends StatelessWidget {
+  const SplashLoadingDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1B4965),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Lottie.asset(
+              'assets/animations/LoadingAnimation.json',
+              width: 100,
+              height: 100,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "FurniHome",
+              style: TextStyle(
+                fontFamily: "Audiowide",
+                fontSize: 28,
+                color: Colors.white,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Đang xử lý...",
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white.withOpacity(0.8),
+              ),
+            ),
+          ],
         ),
       ),
     );

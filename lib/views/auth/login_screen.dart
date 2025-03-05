@@ -1,17 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../viewmodels/auth_viewmodel.dart';
-import '../../widgets/password_textfield.dart';
 import 'register_screen.dart';
+import 'otp_verification_screen.dart';
+import 'package:lottie/lottie.dart';
 
 class LoginScreen extends StatelessWidget {
   final TextEditingController phoneController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
 
   bool isValidPhoneNumber(String phone) {
-    final regex = RegExp(r'^(0|\+84)[3|5|7|8|9][0-9]{8}$');
+    final regex = RegExp(r'^(0|\+84)([35789])[0-9]{8}$');
     return regex.hasMatch(phone);
+  }
+
+  Future<bool> checkPhoneNumberExists(String phoneNumber) async {
+    final querySnapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .where('phoneNumber', isEqualTo: phoneNumber)
+        .get();
+
+    return querySnapshot.docs.isNotEmpty;
+  }
+
+  String cleanPhoneNumber(String phone) {
+    phone = phone.replaceAll(RegExp(r'\s+'), '');
+    phone = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (phone.startsWith('+84')) {
+      phone = '0${phone.substring(3)}';
+    }
+    return phone;
+  }
+
+  void showLoadingDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const SplashLoadingDialog(),
+    );
   }
 
   @override
@@ -36,24 +63,19 @@ class LoginScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Logo ứng dụng
                   Image.asset(
                     'assets/logo/logo - removed.png',
                     height: 160,
                   ),
                   SizedBox(height: 5),
-
-                  // Tên ứng dụng
                   Text(
                     "FurniHome",
                     style: GoogleFonts.audiowide(
                       color: Colors.white,
                       fontSize: 26,
-                      fontWeight: FontWeight.normal,
                     ),
                   ),
                   SizedBox(height: 5),
-
                   Text(
                     "Quản lý đồ đạc dễ dàng, tiện lợi.",
                     style: GoogleFonts.poppins(
@@ -63,8 +85,6 @@ class LoginScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: 30),
-
-                  // Form đăng nhập
                   Container(
                     padding: EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -80,7 +100,6 @@ class LoginScreen extends StatelessWidget {
                     ),
                     child: Column(
                       children: [
-                        // Số điện thoại
                         TextField(
                           controller: phoneController,
                           keyboardType: TextInputType.phone,
@@ -92,33 +111,16 @@ class LoginScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        SizedBox(height: 15),
-
-                        // Mật khẩu
-                        PasswordTextField(
-                          controller: passwordController,
-                          labelText: "Mật khẩu",
-                          borderColor: Color(0xFF1B4965),
-                          iconColor: Color(0xFF1B4965),
-                          labelColor: Colors.black54,
-                        ),
                         SizedBox(height: 20),
-
-                        // Nút đăng nhập
-                        authViewModel.isLoading
-                            ? CircularProgressIndicator()
-                            : ElevatedButton(
+                        ElevatedButton(
                           onPressed: () async {
-                            String phone = phoneController.text.trim();
-                            String password = passwordController.text;
+                            String rawPhone = phoneController.text.trim();
+                            String phone = cleanPhoneNumber(rawPhone);
 
-                            if (phone.isEmpty || password.isEmpty) {
+                            if (phone.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(
-                                    "Vui lòng nhập đầy đủ thông tin",
-                                    textAlign: TextAlign.center,
-                                  ),
+                                  content: Text("Vui lòng nhập số điện thoại", textAlign: TextAlign.center),
                                   backgroundColor: Color(0xFFCA3E47),
                                 ),
                               );
@@ -128,32 +130,44 @@ class LoginScreen extends StatelessWidget {
                             if (!isValidPhoneNumber(phone)) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(
-                                    "Số điện thoại không hợp lệ",
-                                    textAlign: TextAlign.center,
-                                  ),
+                                  content: Text("Số điện thoại không hợp lệ", textAlign: TextAlign.center),
                                   backgroundColor: Color(0xFFCA3E47),
                                 ),
                               );
                               return;
                             }
 
-                            String fakeEmail = "$phone@furnihome.vn";
+                            showLoadingDialog(context);
 
-                            bool success = await authViewModel.loginWithPhone(
-                              fakeEmail,
-                              password,
-                              context,
-                            );
-
-                            if (!success) {
+                            final exists = await checkPhoneNumberExists(phone);
+                            if (!exists) {
+                              if (Navigator.canPop(context)) {
+                                Navigator.pop(context); // Đóng loading an toàn
+                              }
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(
-                                    authViewModel.errorMessage ?? "Đăng nhập thất bại",
-                                    textAlign: TextAlign.center,
-                                  ),
+                                  content: Text("Số điện thoại không tồn tại trong hệ thống", textAlign: TextAlign.center),
                                   backgroundColor: Color(0xFFCA3E47),
+                                ),
+                              );
+                              return;
+                            }
+
+                            final fullPhoneNumber = '+84${phone.substring(1)}';
+                            final verificationId = await authViewModel.sendOTP(fullPhoneNumber);
+                            if (Navigator.canPop(context)) {
+                              Navigator.pop(context); // Đóng loading an toàn
+                            }
+
+
+                            if (verificationId != null) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => OtpVerificationScreen(
+                                    phoneNumber: fullPhoneNumber,
+                                    verificationId: verificationId,
+                                  ),
                                 ),
                               );
                             }
@@ -167,16 +181,19 @@ class LoginScreen extends StatelessWidget {
                             minimumSize: Size(double.infinity, 50),
                           ),
                           child: Text(
-                            "Đăng Nhập",
+                            "Đăng nhập",
                             style: TextStyle(fontSize: 18, color: Colors.white),
                           ),
                         ),
                         SizedBox(height: 15),
-
-                        // Nút đăng nhập Google
                         OutlinedButton.icon(
                           onPressed: () async {
+                            showLoadingDialog(context);
                             await authViewModel.loginWithGoogle(context);
+                            if (Navigator.canPop(context)) {
+                              Navigator.pop(context); // Đóng loading an toàn
+                            }
+
                           },
                           icon: Image.asset('assets/google_icon.png', height: 24),
                           label: Text(
@@ -200,8 +217,6 @@ class LoginScreen extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 20),
-
-                  // Điều hướng sang đăng ký
                   TextButton(
                     onPressed: () {
                       Navigator.push(
@@ -222,6 +237,40 @@ class LoginScreen extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class SplashLoadingDialog extends StatelessWidget {
+  const SplashLoadingDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1B4965),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Lottie.asset('assets/animations/LoadingAnimation.json', width: 100, height: 100),
+            const SizedBox(height: 20),
+            const Text(
+              "FurniHome",
+              style: TextStyle(fontFamily: "Audiowide", fontSize: 28, color: Colors.white, letterSpacing: 2),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              "Đang xử lý...",
+              style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.8)),
+            ),
+          ],
         ),
       ),
     );
