@@ -3,7 +3,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:lottie/lottie.dart';
+import 'package:qldd_demo/views/furnihome_menu/about/about_screen.dart' show AboutScreen;
+import 'package:qldd_demo/views/furnihome_menu/settings/theme_settings_screen.dart';
+import 'package:qldd_demo/views/furnihome_menu/support/support_screen.dart';
 
+import 'core/providers/theme_provider.dart';
 import 'viewmodels/auth_viewmodel.dart';
 import 'viewmodels/home_viewmodel.dart';
 import 'views/auth/login_screen.dart';
@@ -15,9 +19,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
+  final themeProvider = ThemeProvider();
+  await themeProvider.loadSettings();
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => themeProvider),
         ChangeNotifierProvider(create: (context) => AuthViewModel()),
         ChangeNotifierProvider(create: (context) => HomeViewModel()),
       ],
@@ -43,6 +50,9 @@ class MyApp extends StatelessWidget {
         "/register": (context) => RegisterScreen(),
         "/home": (context) => HomeScreen(),
         "/user-info": (context) => UserInfoScreen(),
+        "/about": (context) => const AboutScreen(),
+        "/support": (context) => SupportScreen(), // ✅ Thêm route Hỗ trợ
+        '/theme-settings': (context) => ThemeSettingsScreen(),
       },
     );
   }

@@ -66,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.account_circle, color: Colors.white),
-            onPressed: () => _showAccountSwitcher(context, homeViewModel),
+            onPressed: () => _showAccountMenu(context, homeViewModel),
           ),
         ],
       ),
@@ -205,15 +205,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ✅ Hiển thị chọn tài khoản hoặc đăng xuất
-  void _showAccountSwitcher(BuildContext context, HomeViewModel homeViewModel) async {
-    final accounts = await AccountHistoryService.loadAccounts();
-    print("📝 Danh sách tài khoản đã lưu: ${accounts.length}");
-    final pages = List.generate(
-      (accounts.length / 3).ceil(),
-          (index) => accounts.skip(index * 3).take(3).toList(),
-    );
-
+  // ✅ Hiển thị các options và đăng xuất
+  void _showAccountMenu(BuildContext context, HomeViewModel homeViewModel) async {
     showModalBottomSheet(
       context: context,
       shape: RoundedRectangleBorder(
@@ -245,98 +238,51 @@ class _HomeScreenState extends State<HomeScreen> {
             SizedBox(height: 20),
 
             Text(
-              "Chuyển tài khoản",
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+              "FurniHome Menu",
+              style: GoogleFonts.audiowide(
                 color: Colors.white,
+                fontSize: 22,
               ),
             ),
             SizedBox(height: 20),
 
-            // ✅ Danh sách tài khoản (phân trang nếu > 3)
-            SizedBox(
-              height: 230,
-              child: PageView.builder(
-                itemCount: pages.length,
-                itemBuilder: (context, pageIndex) {
-                  final pageAccounts = pages[pageIndex];
-                  return SingleChildScrollView(
-                    child: Column(
-                      children: pageAccounts.map<Widget>((UserModel account) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.transparent,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.8),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 66,
-                                offset: Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              radius: 28,
-                              backgroundImage: (account.photoUrl != null && account.photoUrl!.isNotEmpty)
-                                  ? NetworkImage(account.photoUrl!)
-                                  : (account.emailAvatarUrl != null && account.emailAvatarUrl!.isNotEmpty)
-                                  ? NetworkImage(account.emailAvatarUrl!)
-                                  : const AssetImage("assets/avatar_placeholder.png") as ImageProvider,
-                            ),
-                            title: Text(
-                              account.displayName ?? "Người dùng",
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  (account.isHomeOwner == true) ? "Chủ nhà" : "Người ở",
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  (account.email ?? "").isNotEmpty
-                                      ? account.email!
-                                      : _formatPhoneNumber(account.phoneNumber ?? ""),
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  );
-                },
-              ),
+            // ✅ Danh sách các tuỳ chọn
+            _buildOption(
+              icon: Icons.color_lens,
+              title: "Cài đặt giao diện",
+              onTap: () {
+                Navigator.pop(context); // Đóng bottom sheet trước
+                Navigator.pushNamed(context, '/theme-settings');
+              },
             ),
+            SizedBox(height: 12),
 
-            SizedBox(height: 20),
+            _buildOption(
+              icon: Icons.info_outline,
+              title: "Giới thiệu ứng dụng",
+              onTap: () {
+                Navigator.pop(context); // Đóng BottomSheet trước
+                Navigator.pushNamed(context, '/about'); // Điều hướng sang màn hình giới thiệu
+              },
+            ),
+            const SizedBox(height: 12),
 
-            // ⭐ Container nút đăng xuất
+            _buildOption(
+              icon: Icons.support_agent,
+              title: "Hỗ trợ",
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/support');
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // ⭐ Nút đăng xuất
             GestureDetector(
               onTap: () async {
                 final confirm = await showDialog<bool>(
                   context: context,
-                  barrierDismissible: false, // Người dùng phải chọn hành động
+                  barrierDismissible: false,
                   builder: (context) => Dialog(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
@@ -391,10 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  child: Text(
-                                    "Huỷ",
-                                    style: TextStyle(fontSize: 16),
-                                  ),
+                                  child: Text("Huỷ", style: TextStyle(fontSize: 16)),
                                 ),
                               ),
                               SizedBox(width: 15),
@@ -410,10 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   child: Text(
                                     "Đăng xuất",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.white,
-                                    ),
+                                    style: TextStyle(fontSize: 16, color: Colors.white),
                                   ),
                                 ),
                               ),
@@ -427,12 +367,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (confirm == true) {
                   await homeViewModel.logout();
                   if (Navigator.canPop(context)) {
-                    Navigator.pop(context); // Đóng loading an toàn
+                    Navigator.pop(context);
                   }
                   Navigator.pushNamedAndRemoveUntil(
                     context,
                     "/login",
-                        (route) => false, // Xoá toàn bộ stack
+                        (route) => false,
                   );
                 }
               },
@@ -468,6 +408,40 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOption({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.white.withOpacity(0.1),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.8),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 26),
+            SizedBox(width: 15),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white,
+              ),
+            ),
           ],
         ),
       ),
